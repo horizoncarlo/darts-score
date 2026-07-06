@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>DARTS - Time to Score</title>
+
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1">
+
+  <script src="js/alpine.js" defer></script>
+
+  <style>
+    :root {
+      --col-count: 4;
+    }
+    
+    * {
+      box-sizing: border-box;
+      font-variant-numeric: tabular-nums;
+    }
+
+    html,
+    body {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      font-family: sans-serif;
+      background-color: #444444;
+    }
+    
+    .header {
+      width: 100%;
+      height: 2rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      align-items: center;
+    }
+
+    .header button {
+      font-size: 1.25rem;
+    }
+
+    .undo-wrap {
+      text-align: left;
+      padding-left: 1rem;
+    }
+
+    .settings-wrap {
+      text-align: right;
+      padding-right: 1rem;
+    }
+    
+    .player-wrap {
+      text-align: center;
+    }
+
+    .player-wrap span {
+      text-shadow: 0 0 5px yellow;
+      color: white;
+      font-size: 2rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .dart-image {
+      max-height: 1.75rem;
+      margin-left: 0.25rem;
+      margin-right: 0.25rem;
+    }
+
+    #score-buttons {
+      width: 100vw;
+      height: calc(100vh - 2.5rem); /* Header plus bottom padding */
+      padding-bottom: 0.5rem;
+      display: grid;
+      grid-template-columns: repeat(var(--col-count), 1fr);
+      grid-template-rows: repeat(5, 1fr);
+      gap: 0;
+      align-items: center;
+      text-align: center;
+      line-height: 1;
+    }
+
+    .point-button,
+    .point-button-sm {
+      color: white;
+      font-family: monospace;
+      font-size: min(12vw, 12vh);
+      width: 18vw;
+      outline: 3px solid black;
+      border: 0;
+      border-radius: 10px;
+    }
+
+    .point-button:hover,
+    .point-button-sm:hover {
+      color: yellow;
+      outline-color: blue;
+      text-shadow: 0 0 5px blue;
+    }
+
+    .point-button-sm {
+      font-size: min(min(6vw, 6vh), 3rem);
+      width: 43vw;
+    }
+  </style>
+  
+  <script>
+    const OUTER_RING_25 = 25;
+    const BULLSEYE_50 = 50;
+    const COLOR_GREEN = "#277D58";
+    const COLOR_RED = "#FC2E2E";
+    const DEFAULT_DART_MAP = {
+      "1": COLOR_GREEN, "2": COLOR_RED, "3": COLOR_RED, "4": COLOR_GREEN,
+      "5": COLOR_GREEN, "6": COLOR_GREEN, "7": COLOR_RED, "8": COLOR_RED,
+      "9": COLOR_GREEN, "10": COLOR_RED, "11": COLOR_GREEN, "12": COLOR_RED,
+      "13": COLOR_RED, "14": COLOR_RED, "15": COLOR_GREEN, "16": COLOR_GREEN,
+      "17": COLOR_GREEN, "18": COLOR_RED, "19": COLOR_GREEN, "20": COLOR_RED,
+      [OUTER_RING_25.toString()]: COLOR_GREEN, [BULLSEYE_50.toString()]: COLOR_RED
+    }
+    
+    let COL_COUNT;
+    document.addEventListener('alpine:initialized', () =>
+      COL_COUNT = Number.parseInt(
+        window.getComputedStyle(document.documentElement).getPropertyValue("--col-count")
+      )
+    );
+  </script>
+</head>
+
+<body x-data="
+{
+  showSettings: false,
+  dartMap: DEFAULT_DART_MAP,
+  chosenScore: null, // Will be set when a score is chosen
+  lastScores: [], // Last recorded scores to be able to Undo
+  currentThrows: 0,
+  currentPlayerRef: null, // Current player, if any
+  players: [], // Array of player objects: name, currentScore, startScore (301 or 501)
+  init() {
+    // TODO Local storage for current game state and scores, in case of accidental refresh, etc.
+    this.players.push(
+      {name: 'Carlo', currentScore: 301, startScore: 301},
+      {name: 'Lizzy', currentScore: 301, startScore: 301},
+      {name: 'Charlie', currentScore: 301, startScore: 301},
+      {name: 'Evelyn', currentScore: 301, startScore: 301}
+    );
+    this.currentPlayerRef = this.players[0];
+  },
+  isRingScore(score) {
+    return score == OUTER_RING_25 || score == BULLSEYE_50;
+  },
+  prevPlayerTurn(optionalScoreAfter) {
+    const currentPlayerIndex = this.players.indexOf(this.currentPlayerRef);
+    let newPlayerIndex = currentPlayerIndex-1;
+    if (newPlayerIndex < 0) {
+      newPlayerIndex = this.players.length-1;
+    }
+    
+    // Change to the previous player THEN apply the undone score
+    this.currentPlayerRef = this.players[newPlayerIndex];
+    if (typeof optionalScoreAfter === 'number') {
+      this.currentPlayerRef.currentScore += optionalScoreAfter;
+    }
+  },
+  nextPlayerTurn(optionalScoreBefore) {
+    const currentPlayerIndex = this.players.indexOf(this.currentPlayerRef);
+    let newPlayerIndex = currentPlayerIndex+1;
+    if (newPlayerIndex >= this.players.length) {
+      newPlayerIndex = 0;
+    }
+    
+    // Apply the score to the current player THEN go to the next player
+    if (typeof optionalScoreBefore === 'number') {
+      this.applyScore(optionalScoreBefore);
+    }
+    this.currentPlayerRef = this.players[newPlayerIndex];
+  },
+  chooseScore(score, multiplier) {
+    if (this.isRingScore(score)) {
+      this.applyThrow(1, score);
+    }
+    else {
+      // Choose an initial score, change view to show multipliers
+      if (typeof multiplier !== 'number') {
+        this.dartMap = this.makeMultiplierMap(score);
+        this.chosenScore = score;
+      }
+      // Have a score already, now choosing a multiplier
+      else if (this.chosenScore !== null) {
+        score *= multiplier;
+        this.applyThrow(1, score);
+        this.dartMap = DEFAULT_DART_MAP;
+        this.chosenScore = null;
+      }
+    }
+  },
+  applyThrow(modifier, score) { // modifier = positive on valid throw, negative on Undo
+    this.currentThrows += modifier;
+    
+    // Rotate to the next player automatically after our turn
+    if (this.currentThrows >= 3) {
+      this.nextPlayerTurn(score);
+      this.currentThrows = 0;
+    }
+    // If we undid until the previous player swap to them
+    else if (this.currentThrows < 0) {
+      this.prevPlayerTurn(score);
+      this.currentThrows = 2;
+    }
+    else {
+      this.applyScore(score);
+    }
+    
+    if (modifier > 0) {
+      this.lastScores.unshift(score);
+    }
+  },
+  applyScore(score) {
+    const potentialNewScore = this.currentPlayerRef.currentScore - score;
+    
+    if (potentialNewScore < 0) {
+      alert(`${this.currentPlayerRef.name} threw a ${score} and BUSTED with ${potentialNewScore}, next turn...`);
+      this.nextPlayerTurn();
+    }
+    else if (potentialNewScore === 0) {
+      alert(`${this.currentPlayerRef.name} WON!\n\nScores:\n${this.players.map(player => player.name + ': ' + player.currentScore)}\n\nRestarting...`);
+      window.location.reload();
+    }
+    else {
+      this.currentPlayerRef.currentScore -= score;
+    }
+  },
+  doUndo() {
+    // If we have a temporary score chosen, but no multiplier, just clear that
+    if (this.chosenScore !== null) {
+      this.dartMap = DEFAULT_DART_MAP;
+      this.chosenScore = null;
+    }
+    // Otherwise undo the last set score
+    else if (this.lastScores?.length) {
+      this.applyThrow(-1, this.lastScores.shift());
+    }
+  },
+  makeMultiplierMap(score) {
+    const allKeys = Object.keys(DEFAULT_DART_MAP);
+    const gridKeys = allKeys.slice(0, -2);
+    const newMap = Object.fromEntries(allKeys.map((key) => [key, '']));
+
+    const clickedIndex = gridKeys.indexOf(score.toString());
+    const clickedCol = clickedIndex % COL_COUNT;
+    const clickedRow = Math.floor(clickedIndex / COL_COUNT);
+    const rowCount = Math.ceil(gridKeys.length / COL_COUNT);
+    const direction = clickedRow + 2 < rowCount ? 1 : -1;
+
+    [0, 1, 2].forEach((offset) => {
+      const row = clickedRow + offset * direction;
+      const index = row * COL_COUNT + clickedCol;
+
+      newMap[gridKeys[index]] = `${offset + 1}x`;
+    });
+    
+    return newMap;
+  },
+}"
+>
+  <div class="header">
+    <div class="undo-wrap">
+      <button @click="doUndo()" :disabled="(chosenScore === null && !lastScores?.length)" x-text="`Undo (${chosenScore ?? (lastScores?.[0] ?? '...')})`"></button>
+    </div>
+    <div class="player-wrap">
+      <span x-text="`${currentPlayerRef?.name} (${currentPlayerRef?.currentScore})`">Current Player</span>
+      <template x-for="i in currentThrows">
+        <img src="img/dart.png" :alt="`Dart ${i}`" :title="`Dart ${i}`" class="dart-image">
+      </template>
+    </div>
+    <!-- TODO Change Skip Turn to Settings, declare players here, plus still a way to skip (without bugs), modify scores, set goal per player, etc. -->
+    <div class="settings-wrap"><button @click="nextPlayerTurn();">Skip Turn</button></div>
+  </div>
+  <template x-if="currentPlayerRef">
+    <div>
+      <div id="score-buttons">
+        <template x-for="[score, cell] in Object.entries(dartMap)" :key="score">
+          <div :style="isRingScore(score) ? 'grid-column: span 2;' : ''">
+            <button
+              x-text="chosenScore === null
+                ? (!isRingScore(score) ? score : (score == OUTER_RING_25 ? '25 Outer' : '50 Bullseye'))
+                : (cell || '-')"
+              :class="`point-button${isRingScore(score) ? '-sm' : ''}`"
+              :style="`visibility: ${cell ? 'visible' : 'hidden'}; background-color: ${chosenScore === null ? (DEFAULT_DART_MAP[score] ?? COLOR_GREEN) : 'indigo'};`"
+              @click="chosenScore === null
+                ? chooseScore(Number.parseInt(score, 10))
+                : chooseScore(chosenScore, Number.parseInt(cell, 10))">
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+</body>
+
+</html>
