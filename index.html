@@ -36,7 +36,7 @@
     }
 
     .header button {
-      font-size: 1.25rem;
+      font-size: 1rem;
     }
 
     .undo-wrap {
@@ -82,7 +82,8 @@
     }
 
     .point-button,
-    .point-button-sm {
+    .point-button-sm,
+    .point-button-wide {
       color: white;
       font-family: monospace;
       font-size: min(12vw, 12vh);
@@ -93,21 +94,28 @@
     }
 
     .point-button:hover,
-    .point-button-sm:hover {
+    .point-button-sm:hover,
+    .point-button-wide:hover {
       color: yellow;
       outline-color: blue;
       text-shadow: 0 0 5px blue;
     }
-
+    
     .point-button-sm {
+      font-size: min(min(6vw, 6vh), 3rem);
+    }
+
+    .point-button-wide {
       font-size: min(min(6vw, 6vh), 3rem);
       width: 43vw;
     }
   </style>
   
   <script>
+    const PASS_0 = 21;
     const OUTER_RING_25 = 25;
     const BULLSEYE_50 = 50;
+    const COLOR_BLACK = "#181818";
     const COLOR_GREEN = "#277D58";
     const COLOR_RED = "#FC2E2E";
     const DEFAULT_DART_MAP = {
@@ -116,7 +124,7 @@
       "9": COLOR_GREEN, "10": COLOR_RED, "11": COLOR_GREEN, "12": COLOR_RED,
       "13": COLOR_RED, "14": COLOR_RED, "15": COLOR_GREEN, "16": COLOR_GREEN,
       "17": COLOR_GREEN, "18": COLOR_RED, "19": COLOR_GREEN, "20": COLOR_RED,
-      [OUTER_RING_25.toString()]: COLOR_GREEN, [BULLSEYE_50.toString()]: COLOR_RED
+      [PASS_0]: COLOR_BLACK, [OUTER_RING_25.toString()]: COLOR_GREEN, [BULLSEYE_50.toString()]: COLOR_RED
     }
     
     let COL_COUNT;
@@ -141,14 +149,26 @@
     // TODO Local storage for current game state and scores, in case of accidental refresh, etc.
     this.players.push(
       {name: 'Carlo', currentScore: 301, startScore: 301},
-      {name: 'Lizzy', currentScore: 301, startScore: 301},
-      {name: 'Charlie', currentScore: 301, startScore: 301},
-      {name: 'Evelyn', currentScore: 301, startScore: 301}
     );
     this.currentPlayerRef = this.players[0];
   },
+  isSpecialScore(score) {
+    return score == PASS_0 || this.isRingScore(score);
+  },
   isRingScore(score) {
     return score == OUTER_RING_25 || score == BULLSEYE_50;
+  },
+  getScoreLabel(score) {
+    if (score == PASS_0) {
+      return 'Zero';
+    }
+    else if (score == OUTER_RING_25) {
+      return '25 Outer';
+    }
+    else if (score == BULLSEYE_50) {
+      return '50 Bullseye';
+    }
+    return score;
   },
   prevPlayerTurn(optionalScoreAfter) {
     const currentPlayerIndex = this.players.indexOf(this.currentPlayerRef);
@@ -175,9 +195,13 @@
       this.applyScore(optionalScoreBefore);
     }
     this.currentPlayerRef = this.players[newPlayerIndex];
+    this.currentThrows = 0;
   },
   chooseScore(score, multiplier) {
-    if (this.isRingScore(score)) {
+    if (this.isSpecialScore(score)) {
+      if (score == PASS_0) {
+        score = 0;
+      }
       this.applyThrow(1, score);
     }
     else {
@@ -195,13 +219,12 @@
       }
     }
   },
-  applyThrow(modifier, score) { // modifier = positive on valid throw, negative on Undo
+  applyThrow(modifier, score, fromUndo) { // modifier = positive on valid throw, negative on Undo
     this.currentThrows += modifier;
     
     // Rotate to the next player automatically after our turn
     if (this.currentThrows >= 3) {
       this.nextPlayerTurn(score);
-      this.currentThrows = 0;
     }
     // If we undid until the previous player swap to them
     else if (this.currentThrows < 0) {
@@ -209,27 +232,44 @@
       this.currentThrows = 2;
     }
     else {
-      this.applyScore(score);
+      this.applyScore(score, fromUndo);
     }
     
     if (modifier > 0) {
       this.lastScores.unshift(score);
     }
   },
-  applyScore(score) {
+  applyScore(score, fromUndo) {
     const potentialNewScore = this.currentPlayerRef.currentScore - score;
     
-    if (potentialNewScore < 0) {
-      alert(`${this.currentPlayerRef.name} threw a ${score} and BUSTED with ${potentialNewScore}, next turn...`);
-      this.nextPlayerTurn();
+    if (!fromUndo) {
+      if (potentialNewScore < 0) {
+        alert(`${this.currentPlayerRef.name} threw a ${score} and BUSTED with ${potentialNewScore}, next turn...`);
+        
+        this.dartMap = DEFAULT_DART_MAP;
+        this.chosenScore = null;
+        for (let i = 0; i < this.currentThrows; i++) {
+          this.doUndo();
+        }
+        
+        this.nextPlayerTurn();
+        return;
+      }
+      else if (!fromUndo && potentialNewScore === 0) {
+        this.currentPlayerRef.currentScore = 0; // We did it
+        
+        alert(`${this.currentPlayerRef.name} WON!\n\nScores:\n${this.players.map(player => player.name + ': ' + player.currentScore).join('\n')}\n\nRestarting...`);
+        window.location.reload();
+        return;
+      }
     }
-    else if (potentialNewScore === 0) {
-      alert(`${this.currentPlayerRef.name} WON!\n\nScores:\n${this.players.map(player => player.name + ': ' + player.currentScore)}\n\nRestarting...`);
-      window.location.reload();
+    
+    // Want to go back in time for an undo
+    if (fromUndo) {
+      score *= -1;
     }
-    else {
-      this.currentPlayerRef.currentScore -= score;
-    }
+    
+    this.currentPlayerRef.currentScore -= score;
   },
   doUndo() {
     // If we have a temporary score chosen, but no multiplier, just clear that
@@ -239,12 +279,12 @@
     }
     // Otherwise undo the last set score
     else if (this.lastScores?.length) {
-      this.applyThrow(-1, this.lastScores.shift());
+      this.applyThrow(-1, this.lastScores.shift(), true);
     }
   },
   makeMultiplierMap(score) {
     const allKeys = Object.keys(DEFAULT_DART_MAP);
-    const gridKeys = allKeys.slice(0, -2);
+    const gridKeys = allKeys.slice(0, -3);
     const newMap = Object.fromEntries(allKeys.map((key) => [key, '']));
 
     const clickedIndex = gridKeys.indexOf(score.toString());
@@ -281,12 +321,12 @@
     <div>
       <div id="score-buttons">
         <template x-for="[score, cell] in Object.entries(dartMap)" :key="score">
-          <div :style="isRingScore(score) ? 'grid-column: span 2;' : ''">
+          <div :style="score == BULLSEYE_50 ? 'grid-column: span 2;' : ''">
             <button
               x-text="chosenScore === null
-                ? (!isRingScore(score) ? score : (score == OUTER_RING_25 ? '25 Outer' : '50 Bullseye'))
+                ? (!isSpecialScore(score) ? score : getScoreLabel(score))
                 : (cell || '-')"
-              :class="`point-button${isRingScore(score) ? '-sm' : ''}`"
+              :class="`point-button${isSpecialScore(score) ? (score == BULLSEYE_50 ? '-wide' : '-sm') : ''}`"
               :style="`visibility: ${cell ? 'visible' : 'hidden'}; background-color: ${chosenScore === null ? (DEFAULT_DART_MAP[score] ?? COLOR_GREEN) : 'indigo'};`"
               @click="chosenScore === null
                 ? chooseScore(Number.parseInt(score, 10))
