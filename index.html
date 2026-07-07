@@ -129,54 +129,117 @@
   </style>
   
   <script>
+    const LS_GAMESTATE = "dartsState";
+    
+    const DEFAULT_GAME_SCORE = 301; // Or 501 for more experienced players
     const PASS_0 = 21;
     const OUTER_RING_25 = 25;
     const BULLSEYE_50 = 50;
+    
     const COLOR_BLUE = "steelblue";
     const COLOR_BLACK = "#181818";
     const COLOR_GREEN = "#277D58";
     const COLOR_RED = "#FC2E2E";
-    let COLOR_GREEN_CURRENT = COLOR_GREEN;
-    let COLOR_RED_CURRENT = COLOR_RED;
-    const GAME_301 = 301;
-    const GAME_501 = 501;
+
     const ORIGINAL_DART_MAP = {
-      "1": COLOR_GREEN_CURRENT, "2": COLOR_RED_CURRENT, "3": COLOR_RED_CURRENT, "4": COLOR_GREEN_CURRENT,
-      "5": COLOR_GREEN_CURRENT, "6": COLOR_GREEN_CURRENT, "7": COLOR_RED_CURRENT, "8": COLOR_RED_CURRENT,
-      "9": COLOR_GREEN_CURRENT, "10": COLOR_RED_CURRENT, "11": COLOR_GREEN_CURRENT, "12": COLOR_RED_CURRENT,
-      "13": COLOR_RED_CURRENT, "14": COLOR_RED_CURRENT, "15": COLOR_GREEN_CURRENT, "16": COLOR_GREEN_CURRENT,
-      "17": COLOR_GREEN_CURRENT, "18": COLOR_RED_CURRENT, "19": COLOR_GREEN_CURRENT, "20": COLOR_RED_CURRENT,
-      [PASS_0]: COLOR_BLACK, [OUTER_RING_25.toString()]: COLOR_GREEN_CURRENT, [BULLSEYE_50.toString()]: COLOR_RED_CURRENT
+      "1": COLOR_GREEN, "2": COLOR_RED, "3": COLOR_RED, "4": COLOR_GREEN,
+      "5": COLOR_GREEN, "6": COLOR_GREEN, "7": COLOR_RED, "8": COLOR_RED,
+      "9": COLOR_GREEN, "10": COLOR_RED, "11": COLOR_GREEN, "12": COLOR_RED,
+      "13": COLOR_RED, "14": COLOR_RED, "15": COLOR_GREEN, "16": COLOR_GREEN,
+      "17": COLOR_GREEN, "18": COLOR_RED, "19": COLOR_GREEN, "20": COLOR_RED,
+      [PASS_0]: COLOR_BLACK, [OUTER_RING_25.toString()]: COLOR_GREEN, [BULLSEYE_50.toString()]: COLOR_RED
     };
-    let DEFAULT_DART_MAP = structuredClone(ORIGINAL_DART_MAP);
     
+    let DEFAULT_DART_MAP = structuredClone(ORIGINAL_DART_MAP);
     let COL_COUNT;
     document.addEventListener('alpine:initialized', () =>
       COL_COUNT = Number.parseInt(
         window.getComputedStyle(document.documentElement).getPropertyValue("--col-count")
       )
     );
+    
+    const PLAYER_NAMES = [
+      "Thunder",
+      "Lightning",
+      "Glitz",
+      "Viper",
+      "Bullseye",
+      "Phantom",
+      "Blaze",
+      "Venom",
+      "Rogue",
+      "Ice",
+      "Havoc",
+      "Maverick",
+      "Outlaw",
+      "Nitro",
+      "Falcon",
+      "Tempest",
+      "Inferno",
+      "Shadow",
+      "Cyclone",
+      "Vortex"
+    ];
   </script>
 </head>
 
 <body x-data="
 {
-  showSettings: false,
-  addPlayer: null,
-  scoreSingleColor: false,
-  dartMap: DEFAULT_DART_MAP,
-  chosenScore: null, // Will be set when a score is chosen
-  lastScores: [], // Last recorded scores to be able to Undo
-  currentThrows: 0,
-  currentPlayerRef: null, // Current player, if any
-  players: [], // Array of player objects: name, currentScore, startScore (301 or 501)
+  state: {
+    showSettings: false,
+    addPlayer: null,
+    scoreSingleColor: false,
+    dartMap: DEFAULT_DART_MAP,
+    chosenScore: null, // Will be set when a score is chosen
+    lastScores: [], // Last recorded scores to be able to Undo
+    currentThrows: 0,
+    currentPlayerRef: null, // Current player, if any
+    players: [], // Array of player objects: name, currentScore, startScore (301 or 501)
+  },
   init() {
-    // TODO Local storage for current game state and scores, in case of accidental refresh, etc.
-    this.players.push(
-      {name: 'Thunder', currentScore: GAME_301, startScore: GAME_301},
-      {name: 'Lightning', currentScore: GAME_301, startScore: GAME_301},
-    );
-    this.currentPlayerRef = this.players[0];
+    // Set some default players
+    if (!this.loadFromStorage()) {
+      this.state.players.push(
+        {name: this.getRandomName(), currentScore: DEFAULT_GAME_SCORE, startScore: DEFAULT_GAME_SCORE},
+        {name: this.getRandomName(), currentScore: DEFAULT_GAME_SCORE, startScore: DEFAULT_GAME_SCORE},
+      );
+      this.state.currentPlayerRef = this.state.players[0];
+    }
+    
+    // Auto-save to storage on change
+    this.$watch('state', () => {
+      this.saveToStorage();
+    });
+  },
+  saveToStorage() {
+    // Strip out a few properties that are fairly transient and take needless space
+    const { lastScores, chosenScore, dartMap, ...toSave } = this.state;
+    
+    localStorage.setItem(LS_GAMESTATE, JSON.stringify(toSave));
+  },
+  loadFromStorage() {
+    let potentialLoad = localStorage.getItem(LS_GAMESTATE);
+    
+    if (potentialLoad?.trim()?.length) {
+      try {
+        potentialLoad = JSON.parse(potentialLoad);
+        this.state = potentialLoad;
+        
+        // Restore some basic transient defaults
+        this.state.lastScores = [];
+        this.state.dartMap = DEFAULT_DART_MAP;
+        this.state.chosenScore = null;
+        
+        // Apply our color choices
+        this.changeColorPalette(this.state.scoreSingleColor);
+        
+        return true;
+      } catch (err) {
+        console.error('Failed to load saved game state', err);
+      }
+    }
+    
+    return false;
   },
   isSpecialScore(score) {
     return score == PASS_0 || this.isRingScore(score);
@@ -197,22 +260,22 @@
     return score;
   },
   prevPlayerTurn(optionalScoreAfter) {
-    const currentPlayerIndex = this.players.indexOf(this.currentPlayerRef);
+    const currentPlayerIndex = this.state.players.indexOf(this.state.currentPlayerRef);
     let newPlayerIndex = currentPlayerIndex-1;
     if (newPlayerIndex < 0) {
-      newPlayerIndex = this.players.length-1;
+      newPlayerIndex = this.state.players.length-1;
     }
     
     // Change to the previous player THEN apply the undone score
-    this.currentPlayerRef = this.players[newPlayerIndex];
+    this.state.currentPlayerRef = this.state.players[newPlayerIndex];
     if (typeof optionalScoreAfter === 'number') {
-      this.currentPlayerRef.currentScore += optionalScoreAfter;
+      this.state.currentPlayerRef.currentScore += optionalScoreAfter;
     }
   },
   nextPlayerTurn(optionalScoreBefore) {
-    const currentPlayerIndex = this.players.indexOf(this.currentPlayerRef);
+    const currentPlayerIndex = this.state.players.indexOf(this.state.currentPlayerRef);
     let newPlayerIndex = currentPlayerIndex+1;
-    if (newPlayerIndex >= this.players.length) {
+    if (newPlayerIndex >= this.state.players.length) {
       newPlayerIndex = 0;
     }
     
@@ -220,35 +283,34 @@
     if (typeof optionalScoreBefore === 'number') {
       this.applyScore(optionalScoreBefore);
     }
-    this.currentPlayerRef = this.players[newPlayerIndex];
-    this.currentThrows = 0;
+    this.state.currentPlayerRef = this.state.players[newPlayerIndex];
+    this.state.currentThrows = 0;
   },
   addNewPlayer() {
-    this.addPlayer = {
-      name: 'New',
-      startScore: GAME_301
+    this.state.addPlayer = {
+      name: this.getRandomName(),
+      startScore: DEFAULT_GAME_SCORE
     };
   },
   saveNewPlayer(event) {
     event.preventDefault();
     
-    if (this.addPlayer?.name?.trim().length &&
-        !Number.isNaN(Number.parseInt(this.addPlayer?.startScore))) {
-      this.addPlayer.currentScore = this.addPlayer.startScore;
-      this.players.push(this.addPlayer);
-      this.addPlayer = null;
+    if (this.state.addPlayer?.name?.trim().length &&
+        !Number.isNaN(Number.parseInt(this.state.addPlayer?.startScore))) {
+      this.state.addPlayer.currentScore = this.state.addPlayer.startScore;
+      this.state.players.push(this.state.addPlayer);
+      this.state.addPlayer = null;
       
-      if (!this.currentPlayerRef) {
-        this.currentPlayerRef = this.players[0];
+      if (!this.state.currentPlayerRef) {
+        this.state.currentPlayerRef = this.state.players[0];
       }
     }
   },
   removePlayer(playerObj) {
-    this.players.splice(this.players.indexOf(playerObj), 1);
+    this.state.players.splice(this.state.players.indexOf(playerObj), 1);
     
-    this.currentPlayerRef = this.players[0];
-    console.log('CURRENT PLAYER REF IS', this.currentPlayerRef);
-    this.currentThrows = 0;
+    this.state.currentPlayerRef = this.state.players[0];
+    this.state.currentThrows = 0;
   },
   chooseScore(score, multiplier) {
     if (this.isSpecialScore(score)) {
@@ -260,48 +322,48 @@
     else {
       // Choose an initial score, change view to show multipliers
       if (typeof multiplier !== 'number') {
-        this.dartMap = this.makeMultiplierMap(score);
-        this.chosenScore = score;
+        this.state.dartMap = this.makeMultiplierMap(score);
+        this.state.chosenScore = score;
       }
       // Have a score already, now choosing a multiplier
-      else if (this.chosenScore !== null) {
+      else if (this.state.chosenScore !== null) {
         score *= multiplier;
         this.applyThrow(1, score);
-        this.dartMap = DEFAULT_DART_MAP;
-        this.chosenScore = null;
+        this.state.dartMap = DEFAULT_DART_MAP;
+        this.state.chosenScore = null;
       }
     }
   },
   applyThrow(modifier, score, fromUndo) { // modifier = positive on valid throw, negative on Undo
-    this.currentThrows += modifier;
+    this.state.currentThrows += modifier;
     
     // Rotate to the next player automatically after our turn
-    if (this.currentThrows >= 3) {
+    if (this.state.currentThrows >= 3) {
       this.nextPlayerTurn(score);
     }
     // If we undid until the previous player swap to them
-    else if (this.currentThrows < 0) {
+    else if (this.state.currentThrows < 0) {
       this.prevPlayerTurn(score);
-      this.currentThrows = 2;
+      this.state.currentThrows = 2;
     }
     else {
       this.applyScore(score, fromUndo);
     }
     
     if (modifier > 0) {
-      this.lastScores.unshift(score);
+      this.state.lastScores.unshift(score);
     }
   },
   applyScore(score, fromUndo) {
-    const potentialNewScore = this.currentPlayerRef.currentScore - score;
+    const potentialNewScore = this.state.currentPlayerRef.currentScore - score;
     
     if (!fromUndo) {
       if (potentialNewScore < 0) {
-        alert(`${this.currentPlayerRef.name} threw a ${score} and BUSTED with ${potentialNewScore}, next turn...`);
+        alert(`${this.state.currentPlayerRef.name} threw a ${score} and BUSTED with ${potentialNewScore}, next turn...`);
         
-        this.dartMap = DEFAULT_DART_MAP;
-        this.chosenScore = null;
-        for (let i = 0; i < this.currentThrows; i++) {
+        this.state.dartMap = DEFAULT_DART_MAP;
+        this.state.chosenScore = null;
+        for (let i = 0; i < this.state.currentThrows; i++) {
           this.doUndo();
         }
         
@@ -309,9 +371,9 @@
         return;
       }
       else if (!fromUndo && potentialNewScore === 0) {
-        this.currentPlayerRef.currentScore = 0; // We did it
+        this.state.currentPlayerRef.currentScore = 0; // We did it
         
-        alert(`${this.currentPlayerRef.name} WON!\n\nScores:\n${this.players.map(player => player.name + ': ' + player.currentScore).join('\n')}\n\nRestarting...`);
+        alert(`${this.state.currentPlayerRef.name} WON!\n\nScores:\n${this.state.players.map(player => player.name + ': ' + player.currentScore).join('\n')}\n\nRestarting...`);
         window.location.reload();
         return;
       }
@@ -322,17 +384,17 @@
       score *= -1;
     }
     
-    this.currentPlayerRef.currentScore -= score;
+    this.state.currentPlayerRef.currentScore -= score;
   },
   doUndo() {
     // If we have a temporary score chosen, but no multiplier, just clear that
-    if (this.chosenScore !== null) {
-      this.dartMap = DEFAULT_DART_MAP;
-      this.chosenScore = null;
+    if (this.state.chosenScore !== null) {
+      this.state.dartMap = DEFAULT_DART_MAP;
+      this.state.chosenScore = null;
     }
     // Otherwise undo the last set score
-    else if (this.lastScores?.length) {
-      this.applyThrow(-1, this.lastScores.shift(), true);
+    else if (this.state.lastScores?.length) {
+      this.applyThrow(-1, this.state.lastScores.shift(), true);
     }
   },
   makeMultiplierMap(score) {
@@ -355,6 +417,13 @@
     
     return newMap;
   },
+  getRandomName() {
+    if (PLAYER_NAMES?.length) {
+      const index = Math.floor(Math.random() * PLAYER_NAMES.length);
+      return PLAYER_NAMES.splice(index, 1)[0];
+    }
+    return 'New';
+  },
   changeColorPalette(isChecked) {
     if (isChecked) {
       Object.keys(DEFAULT_DART_MAP).forEach(key => {
@@ -369,64 +438,69 @@
 >
     <div class="header">
       <div class="undo-wrap">
-        <button @click="doUndo()" :disabled="(chosenScore === null && !lastScores?.length)" x-text="`Undo (${chosenScore ?? (lastScores?.[0] ?? '...')})`"></button>
+        <button @click="doUndo()" :disabled="(state.chosenScore === null && !state.lastScores?.length)" x-text="`Undo (${state.chosenScore ?? (state.lastScores?.[0] ?? '...')})`"></button>
       </div>
       <div class="player-wrap">
-        <span x-text="`${currentPlayerRef?.name ?? 'None'} (${currentPlayerRef?.currentScore ?? 'Add a new player!'})`"></span>
-        <template x-for="i in currentThrows">
+        <span x-text="`${state.currentPlayerRef?.name ?? 'None'} (${state.currentPlayerRef?.currentScore ?? 'Add a new player!'})`"></span>
+        <template x-for="i in state.currentThrows">
           <img src="img/dart.png" :alt="`Dart ${i}`" :title="`Dart ${i}`" class="dart-image">
         </template>
       </div>
-      <div class="settings-wrap"><button @click="showSettings = !showSettings" :disabled="!players?.length" x-text="showSettings ? 'Save' : 'Settings'"></button></div>
+      <div class="settings-wrap"><button @click="state.showSettings = !state.showSettings" :disabled="!state.players?.length" x-text="state.showSettings ? 'Save' : 'Settings'"></button></div>
     </div>
-    <template x-if="!showSettings && currentPlayerRef">
+    <template x-if="!state.showSettings && state.currentPlayerRef">
       <div>
         <div id="score-buttons">
-          <template x-for="[score, cell] in Object.entries(dartMap)" :key="score">
+          <template x-for="[score, cell] in Object.entries(state.dartMap)" :key="score">
             <div :style="score == BULLSEYE_50 ? 'grid-column: span 2;' : ''">
               <button
-                x-text="chosenScore === null
+                x-text="state.chosenScore === null
                   ? (!isSpecialScore(score) ? score : getScoreLabel(score))
                   : (cell || '-')"
                 :class="`point-button${isSpecialScore(score) ? (score == BULLSEYE_50 ? '-wide' : '-sm') : ''}`"
-                :style="`visibility: ${cell ? 'visible' : 'hidden'}; background-color: ${chosenScore === null ? (DEFAULT_DART_MAP[score] ?? COLOR_GREEN) : 'indigo'};`"
-                @click="chosenScore === null
+                :style="`visibility: ${cell ? 'visible' : 'hidden'}; background-color: ${state.chosenScore === null ? (DEFAULT_DART_MAP[score] ?? COLOR_GREEN) : 'indigo'};`"
+                @click="state.chosenScore === null
                   ? chooseScore(Number.parseInt(score, 10))
-                  : chooseScore(chosenScore, Number.parseInt(cell, 10))">
+                  : chooseScore(state.chosenScore, Number.parseInt(cell, 10))">
               </button>
             </div>
           </template>
         </div>
       </div>
     </template>
-    <template x-if="showSettings">
+    <template x-if="state.showSettings">
     <div>
       <div class="settings-card">
         <label>
-          <input type="checkbox" x-model="scoreSingleColor" @change="changeColorPalette($event.target.checked)"></input>
+          <input type="checkbox" x-model="state.scoreSingleColor" @change="changeColorPalette($event.target.checked)"></input>
           Score buttons use <span :style="`background-color: ${COLOR_BLUE}`">single color</span> instead of <span :style="`background-color: ${COLOR_RED}`">red</span> and <span :style="`background-color: ${COLOR_GREEN}`">green</span>
+        </label>
+        <br><br><hr/><br>
+        <label>
+          <button @click="localStorage.removeItem(LS_GAMESTATE); window.location.reload();">Delete Saves</button>
+          Clear entire local saved game state
         </label>
       </div>
       <div class="settings-card">
         <ol>
-          <template x-for="player in players">
+          <template x-for="player in state.players">
             <li>
               <b x-text="player.name"></b>
               <span x-text="`(Score ${player.currentScore} of ${player.startScore})`"></span>
               <br>
               <button @click="removePlayer(player)">Remove</button>
               <button @click="player.currentScore = window.prompt(`Enter adjusted score (current is ${player.currentScore})`, player.currentScore) ?? player.currentScore">Change Score</button>
-              <button @click="currentPlayerRef = player">Give Turn</button>
+              <button @click="state.currentPlayerRef = player">Give Turn</button>
             </li>
           </template>
           <li>
-            <template x-if="!addPlayer">
+            <template x-if="!state.addPlayer">
               <button @click="addNewPlayer();">Add New Player</button>
             </template>
-            <template x-if="addPlayer">
+            <template x-if="state.addPlayer">
               <form class="new-player-wrap">
-                <input x-ref="nameIn" x-model="addPlayer.name" placeholder="Name" autofocus></input>
-                <input x-model="addPlayer.startScore" placeholder="Goal Score"></input>
+                <input x-ref="nameIn" x-model="state.addPlayer.name" placeholder="Name" autofocus></input>
+                <input x-model="state.addPlayer.startScore" placeholder="Goal Score"></input>
                 <br><br>
                 <button @click="saveNewPlayer($event)">Save New Player</button>
               </form>
