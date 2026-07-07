@@ -15,6 +15,8 @@
     
     * {
       box-sizing: border-box;
+      font-family: monospace;
+      font-size: 1rem;
       font-variant-numeric: tabular-nums;
     }
 
@@ -27,16 +29,28 @@
       background-color: #444444;
     }
     
+    .settings-card {
+      width: 95%;
+      margin-left: auto;
+      margin-right: auto;
+      margin-top: 2rem;
+      padding: 2rem;
+      border-radius: 1rem;
+      border: 5px outset blue;
+      background-color: #DDDDDD;
+    }
+    
+    li {
+      padding: 2rem;
+      margin-left: 2rem;
+    }
+    
     .header {
       width: 100%;
       height: 2rem;
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       align-items: center;
-    }
-
-    .header button {
-      font-size: 1rem;
     }
 
     .undo-wrap {
@@ -80,12 +94,15 @@
       text-align: center;
       line-height: 1;
     }
+    
+    .new-player-wrap input {
+      width: 9rem;
+    }
 
     .point-button,
     .point-button-sm,
     .point-button-wide {
       color: white;
-      font-family: monospace;
       font-size: min(12vw, 12vh);
       width: 18vw;
       outline: 3px solid black;
@@ -101,12 +118,12 @@
       text-shadow: 0 0 5px blue;
     }
     
-    .point-button-sm {
-      font-size: min(min(6vw, 6vh), 3rem);
+    .point-button-sm,
+    .point-button-wide {
+      font-size: min(min(5vw, 5vh), 3rem);
     }
 
     .point-button-wide {
-      font-size: min(min(6vw, 6vh), 3rem);
       width: 43vw;
     }
   </style>
@@ -115,17 +132,23 @@
     const PASS_0 = 21;
     const OUTER_RING_25 = 25;
     const BULLSEYE_50 = 50;
+    const COLOR_BLUE = "steelblue";
     const COLOR_BLACK = "#181818";
     const COLOR_GREEN = "#277D58";
     const COLOR_RED = "#FC2E2E";
-    const DEFAULT_DART_MAP = {
-      "1": COLOR_GREEN, "2": COLOR_RED, "3": COLOR_RED, "4": COLOR_GREEN,
-      "5": COLOR_GREEN, "6": COLOR_GREEN, "7": COLOR_RED, "8": COLOR_RED,
-      "9": COLOR_GREEN, "10": COLOR_RED, "11": COLOR_GREEN, "12": COLOR_RED,
-      "13": COLOR_RED, "14": COLOR_RED, "15": COLOR_GREEN, "16": COLOR_GREEN,
-      "17": COLOR_GREEN, "18": COLOR_RED, "19": COLOR_GREEN, "20": COLOR_RED,
-      [PASS_0]: COLOR_BLACK, [OUTER_RING_25.toString()]: COLOR_GREEN, [BULLSEYE_50.toString()]: COLOR_RED
-    }
+    let COLOR_GREEN_CURRENT = COLOR_GREEN;
+    let COLOR_RED_CURRENT = COLOR_RED;
+    const GAME_301 = 301;
+    const GAME_501 = 501;
+    const ORIGINAL_DART_MAP = {
+      "1": COLOR_GREEN_CURRENT, "2": COLOR_RED_CURRENT, "3": COLOR_RED_CURRENT, "4": COLOR_GREEN_CURRENT,
+      "5": COLOR_GREEN_CURRENT, "6": COLOR_GREEN_CURRENT, "7": COLOR_RED_CURRENT, "8": COLOR_RED_CURRENT,
+      "9": COLOR_GREEN_CURRENT, "10": COLOR_RED_CURRENT, "11": COLOR_GREEN_CURRENT, "12": COLOR_RED_CURRENT,
+      "13": COLOR_RED_CURRENT, "14": COLOR_RED_CURRENT, "15": COLOR_GREEN_CURRENT, "16": COLOR_GREEN_CURRENT,
+      "17": COLOR_GREEN_CURRENT, "18": COLOR_RED_CURRENT, "19": COLOR_GREEN_CURRENT, "20": COLOR_RED_CURRENT,
+      [PASS_0]: COLOR_BLACK, [OUTER_RING_25.toString()]: COLOR_GREEN_CURRENT, [BULLSEYE_50.toString()]: COLOR_RED_CURRENT
+    };
+    let DEFAULT_DART_MAP = structuredClone(ORIGINAL_DART_MAP);
     
     let COL_COUNT;
     document.addEventListener('alpine:initialized', () =>
@@ -139,6 +162,8 @@
 <body x-data="
 {
   showSettings: false,
+  addPlayer: null,
+  scoreSingleColor: false,
   dartMap: DEFAULT_DART_MAP,
   chosenScore: null, // Will be set when a score is chosen
   lastScores: [], // Last recorded scores to be able to Undo
@@ -148,7 +173,8 @@
   init() {
     // TODO Local storage for current game state and scores, in case of accidental refresh, etc.
     this.players.push(
-      {name: 'Carlo', currentScore: 301, startScore: 301},
+      {name: 'Thunder', currentScore: GAME_301, startScore: GAME_301},
+      {name: 'Lightning', currentScore: GAME_301, startScore: GAME_301},
     );
     this.currentPlayerRef = this.players[0];
   },
@@ -195,6 +221,33 @@
       this.applyScore(optionalScoreBefore);
     }
     this.currentPlayerRef = this.players[newPlayerIndex];
+    this.currentThrows = 0;
+  },
+  addNewPlayer() {
+    this.addPlayer = {
+      name: 'New',
+      startScore: GAME_301
+    };
+  },
+  saveNewPlayer(event) {
+    event.preventDefault();
+    
+    if (this.addPlayer?.name?.trim().length &&
+        !Number.isNaN(Number.parseInt(this.addPlayer?.startScore))) {
+      this.addPlayer.currentScore = this.addPlayer.startScore;
+      this.players.push(this.addPlayer);
+      this.addPlayer = null;
+      
+      if (!this.currentPlayerRef) {
+        this.currentPlayerRef = this.players[0];
+      }
+    }
+  },
+  removePlayer(playerObj) {
+    this.players.splice(this.players.indexOf(playerObj), 1);
+    
+    this.currentPlayerRef = this.players[0];
+    console.log('CURRENT PLAYER REF IS', this.currentPlayerRef);
     this.currentThrows = 0;
   },
   chooseScore(score, multiplier) {
@@ -302,41 +355,87 @@
     
     return newMap;
   },
+  changeColorPalette(isChecked) {
+    if (isChecked) {
+      Object.keys(DEFAULT_DART_MAP).forEach(key => {
+        DEFAULT_DART_MAP[key] = COLOR_BLUE;
+      });
+    }
+    else {
+      DEFAULT_DART_MAP = structuredClone(ORIGINAL_DART_MAP);
+    }
+  },
 }"
 >
-  <div class="header">
-    <div class="undo-wrap">
-      <button @click="doUndo()" :disabled="(chosenScore === null && !lastScores?.length)" x-text="`Undo (${chosenScore ?? (lastScores?.[0] ?? '...')})`"></button>
-    </div>
-    <div class="player-wrap">
-      <span x-text="`${currentPlayerRef?.name} (${currentPlayerRef?.currentScore})`">Current Player</span>
-      <template x-for="i in currentThrows">
-        <img src="img/dart.png" :alt="`Dart ${i}`" :title="`Dart ${i}`" class="dart-image">
-      </template>
-    </div>
-    <!-- TODO Change Skip Turn to Settings, declare players here, plus still a way to skip (without bugs), modify scores, set goal per player, etc. -->
-    <div class="settings-wrap"><button @click="nextPlayerTurn();">Skip Turn</button></div>
-  </div>
-  <template x-if="currentPlayerRef">
-    <div>
-      <div id="score-buttons">
-        <template x-for="[score, cell] in Object.entries(dartMap)" :key="score">
-          <div :style="score == BULLSEYE_50 ? 'grid-column: span 2;' : ''">
-            <button
-              x-text="chosenScore === null
-                ? (!isSpecialScore(score) ? score : getScoreLabel(score))
-                : (cell || '-')"
-              :class="`point-button${isSpecialScore(score) ? (score == BULLSEYE_50 ? '-wide' : '-sm') : ''}`"
-              :style="`visibility: ${cell ? 'visible' : 'hidden'}; background-color: ${chosenScore === null ? (DEFAULT_DART_MAP[score] ?? COLOR_GREEN) : 'indigo'};`"
-              @click="chosenScore === null
-                ? chooseScore(Number.parseInt(score, 10))
-                : chooseScore(chosenScore, Number.parseInt(cell, 10))">
-            </button>
-          </div>
+    <div class="header">
+      <div class="undo-wrap">
+        <button @click="doUndo()" :disabled="(chosenScore === null && !lastScores?.length)" x-text="`Undo (${chosenScore ?? (lastScores?.[0] ?? '...')})`"></button>
+      </div>
+      <div class="player-wrap">
+        <span x-text="`${currentPlayerRef?.name ?? 'None'} (${currentPlayerRef?.currentScore ?? 'Add a new player!'})`"></span>
+        <template x-for="i in currentThrows">
+          <img src="img/dart.png" :alt="`Dart ${i}`" :title="`Dart ${i}`" class="dart-image">
         </template>
       </div>
+      <div class="settings-wrap"><button @click="showSettings = !showSettings" :disabled="!players?.length" x-text="showSettings ? 'Save' : 'Settings'"></button></div>
     </div>
-  </template>
+    <template x-if="!showSettings && currentPlayerRef">
+      <div>
+        <div id="score-buttons">
+          <template x-for="[score, cell] in Object.entries(dartMap)" :key="score">
+            <div :style="score == BULLSEYE_50 ? 'grid-column: span 2;' : ''">
+              <button
+                x-text="chosenScore === null
+                  ? (!isSpecialScore(score) ? score : getScoreLabel(score))
+                  : (cell || '-')"
+                :class="`point-button${isSpecialScore(score) ? (score == BULLSEYE_50 ? '-wide' : '-sm') : ''}`"
+                :style="`visibility: ${cell ? 'visible' : 'hidden'}; background-color: ${chosenScore === null ? (DEFAULT_DART_MAP[score] ?? COLOR_GREEN) : 'indigo'};`"
+                @click="chosenScore === null
+                  ? chooseScore(Number.parseInt(score, 10))
+                  : chooseScore(chosenScore, Number.parseInt(cell, 10))">
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+    <template x-if="showSettings">
+    <div>
+      <div class="settings-card">
+        <label>
+          <input type="checkbox" x-model="scoreSingleColor" @change="changeColorPalette($event.target.checked)"></input>
+          Score buttons use <span :style="`background-color: ${COLOR_BLUE}`">single color</span> instead of <span :style="`background-color: ${COLOR_RED}`">red</span> and <span :style="`background-color: ${COLOR_GREEN}`">green</span>
+        </label>
+      </div>
+      <div class="settings-card">
+        <ol>
+          <template x-for="player in players">
+            <li>
+              <b x-text="player.name"></b>
+              <span x-text="`(Score ${player.currentScore} of ${player.startScore})`"></span>
+              <br>
+              <button @click="removePlayer(player)">Remove</button>
+              <button @click="player.currentScore = window.prompt(`Enter adjusted score (current is ${player.currentScore})`, player.currentScore) ?? player.currentScore">Change Score</button>
+              <button @click="currentPlayerRef = player">Give Turn</button>
+            </li>
+          </template>
+          <li>
+            <template x-if="!addPlayer">
+              <button @click="addNewPlayer();">Add New Player</button>
+            </template>
+            <template x-if="addPlayer">
+              <form class="new-player-wrap">
+                <input x-ref="nameIn" x-model="addPlayer.name" placeholder="Name" autofocus></input>
+                <input x-model="addPlayer.startScore" placeholder="Goal Score"></input>
+                <br><br>
+                <button @click="saveNewPlayer($event)">Save New Player</button>
+              </form>
+            </template>
+          </li>
+        </ol>
+      </div>
+    </div>
+    </template>
 </body>
 
 </html>
